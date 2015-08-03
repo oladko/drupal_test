@@ -1,0 +1,345 @@
+<?php
+
+/**
+ * Implements hook_entity_info().
+ */
+function ooa_gallery_entity_info() {
+  $return = array(
+    'ooa_gallery' => array(
+      'label' => t('Gallery'),
+      'entity class' => 'OoaGallery',
+      'controller class' => 'OoaGalleryController',
+      'base table' => 'ooa_gallery',
+      'fieldable' => TRUE,
+      'entity keys' => array(
+        'id' => 'gid',
+        'bundle' => 'type',
+      ),
+      'bundle keys' => array(
+        'bundle' => 'type',
+      ),
+      'bundles' => array(),
+      'load hook' => 'ooa_gallery_load',
+      'view modes' => array(
+        'full' => array(
+          'label' => t('Default'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'label callback' => 'entity_class_label',
+      'uri callback' => 'entity_class_uri',
+      'module' => 'ooa_gallery',
+      'access callback' => 'ooa_gallery_access',
+    ),
+  );
+  $return['ooa_gallery_type'] = array(
+    'label' => t('Gallery Type'),
+    'entity class' => 'OoaGalleryType',
+    'controller class' => 'OoaGalleryTypeController',
+    'base table' => 'ooa_gallery_type',
+    'fieldable' => FALSE,
+    'bundle of' => 'ooa_gallery',
+    'exportable' => TRUE,
+    'entity keys' => array(
+      'id' => 'id',
+      'name' => 'type',
+      'label' => 'label',
+    ),
+    'module' => 'ooa_gallery',
+    // Enable the entity API's admin UI.
+    'admin ui' => array(
+      'path' => 'admin/structure/gallery-types',
+      'file' => 'ooa_gallery.admin.inc',
+      'controller class' => 'OoaGalleryTypeUIController',
+    ),
+    'access callback' => 'ooa_gallery_type_access',
+  );
+
+  return $return;
+}
+
+/**
+ * Implements hook_entity_info_alter().
+ */
+function ooa_gallery_entity_info_alter(&$entity_info) {
+  foreach (ooa_gallery_types() as $type => $info) {
+    $entity_info['ooa_gallery']['bundles'][$type] = array(
+      'label' => $info->label,
+      'admin' => array(
+        'path' => 'admin/structure/gallery-types/manage/%ooa_gallery_type',
+        'real path' => 'admin/structure/gallery-types/manage/' . $type,
+        'bundle argument' => 4,
+      ),
+    );
+  }
+}
+
+/**
+ * Implements hook_menu().
+ */
+function ooa_gallery_menu() {
+  $items = array();
+
+  $items['gallery/add'] = array(
+    'title' => 'Add gallery',
+    'page callback' => 'ooa_gallery_admin_add_page',
+    'access arguments' => array('administer ooa_gallery entities'),
+    'file' => 'ooa_gallery.admin.inc',
+    'type' => MENU_LOCAL_ACTION,
+    'tab_parent' => 'gallery',
+    'tab_root' => 'gallery',
+  );
+
+  $gallery_uri = 'gallery/%ooa_gallery';
+  $gallery_uri_argument_position = 1;
+
+  $items[$gallery_uri] = array(
+    'title callback' => 'entity_label',
+    'title arguments' => array('ooa_gallery', $gallery_uri_argument_position),
+    'page callback' => 'ooa_gallery_view',
+    'page arguments' => array($gallery_uri_argument_position),
+    'access callback' => 'entity_access',
+    'access arguments' => array('view', 'ooa_gallery', $gallery_uri_argument_position),
+    'file' => 'ooa_gallery.pages.inc',
+  );
+
+  $items[$gallery_uri . '/view'] = array(
+    'title' => 'View',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+
+  $items[$gallery_uri . '/delete'] = array(
+    'title' => 'Delete gallery',
+    'title callback' => 'ooa_gallery_label',
+    'title arguments' => array($gallery_uri_argument_position),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ooa_gallery_delete_form', $gallery_uri_argument_position),
+    'access callback' => 'entity_access',
+    'access arguments' => array('edit', 'ooa_gallery', $gallery_uri_argument_position),
+    'file' => 'ooa_gallery.admin.inc',
+  );
+
+  $items[$gallery_uri . '/edit'] = array(
+    'title' => 'Edit',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ooa_gallery_form', $gallery_uri_argument_position),
+    'access callback' => 'entity_access',
+    'access arguments' => array('edit', 'ooa_gallery', $gallery_uri_argument_position),
+    'file' => 'ooa_gallery.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,
+  );
+
+  foreach (ooa_gallery_types() as $type => $info) {
+    $items['gallery/add/' . $type] = array(
+      'title' => 'Add gallery',
+      'page callback' => 'ooa_gallery_add',
+      'page arguments' => array(2),
+      'access callback' => 'entity_access',
+      'access arguments' => array('create', 'ooa_gallery', $type),
+      'file' => 'ooa_gallery.admin.inc',
+    );
+  }
+
+  $items['admin/structure/gallery-types/%ooa_gallery_type/delete'] = array(
+    'title' => 'Delete',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ooa_gallery_type_form_delete_confirm', 4),
+    'access arguments' => array('administer ooa_gallery types'),
+    'weight' => 1,
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'ooa_gallery.admin.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function ooa_gallery_permission() {
+  $permissions = array(
+    'administer ooa_gallery types' => array(
+      'title' => t('Administer gallery types'),
+      'description' => t('Allows users to configure gallery types and their fields.'),
+      'restrict access' => TRUE,
+    ),
+    'create ooa_gallery entities' => array(
+      'title' => t('Create gallery'),
+      'description' => t('Allows users to create galleries.'),
+      'restrict access' => TRUE,
+    ),
+    'view ooa_gallery entities' => array(
+      'title' => t('View galleries'),
+      'description' => t('Allows users to view galleries.'),
+      'restrict access' => TRUE,
+    ),
+    'edit any ooa_gallery entities' => array(
+      'title' => t('Edit any galleries'),
+      'description' => t('Allows users to edit any galleries.'),
+      'restrict access' => TRUE,
+    ),
+    'edit own ooa_gallery entities' => array(
+      'title' => t('Edit own galleries'),
+      'description' => t('Allows users to edit own galleries.'),
+      'restrict access' => TRUE,
+    ),
+  );
+
+  return $permissions;
+}
+
+
+/**
+ * Implements hook_entity_property_info_alter().
+ */
+function ooa_gallery_entity_property_info_alter(&$info) {
+  $properties = &$info['ooa_gallery']['properties'];
+  $properties['created'] = array(
+    'label' => t("Date created"),
+    'type' => 'date',
+    'description' => t("The date the node was posted."),
+    'setter callback' => 'entity_property_verbatim_set',
+    'setter permission' => 'administer nodes',
+    'schema field' => 'created',
+  );
+  $properties['changed'] = array(
+    'label' => t("Date changed"),
+    'type' => 'date',
+    'schema field' => 'changed',
+    'description' => t("The date the node was most recently updated."),
+  );
+  $properties['uid'] = array(
+    'label' => t("Author"),
+    'type' => 'user',
+    'description' => t("The author of the gallery."),
+    'setter callback' => 'entity_property_verbatim_set',
+    'setter permission' => 'administer ooa_gallery entities',
+    'required' => TRUE,
+    'schema field' => 'uid',
+  );
+}
+
+
+/*******************************************************************************
+ ********************************* Task API's **********************************
+ ******************************************************************************/
+
+/**
+ * Access callback for gallery.
+ */
+function ooa_gallery_access($op, $gallery, $account = NULL, $entity_type = NULL) {
+  global $user;
+
+  if (!isset($account)) {
+    $account = $user;
+  }
+  switch ($op) {
+    case 'create':
+      return user_access('administer ooa_gallery entities', $account)
+          || user_access('create ooa_gallery entities', $account);
+    case 'view':
+      return user_access('administer ooa_gallery entities', $account)
+          || user_access('view ooa_gallery entities', $account);
+    case 'edit':
+      return user_access('administer ooa_gallery entities')
+          || user_access('edit any ooa_gallery entities')
+          || (user_access('edit own ooa_gallery entities') && ($gallery->uid == $account->uid));
+  }
+}
+
+/**
+ * Load a gallery.
+ */
+function ooa_gallery_load($gid, $reset = FALSE) {
+  $galleries = ooa_gallery_load_multiple(array($gid), array(), $reset);
+  return reset($galleries);
+}
+
+/**
+ * Load multiple galleries based on certain conditions.
+ */
+function ooa_gallery_load_multiple($gids = array(), $conditions = array(), $reset = FALSE) {
+  return entity_load('ooa_gallery', $gids, $conditions, $reset);
+}
+
+/**
+ * Save gallery.
+ */
+function ooa_gallery_save($gallery) {
+  entity_save('ooa_gallery', $gallery);
+}
+
+/**
+ * Delete single gallery.
+ */
+function ooa_gallery_delete($gallery) {
+  entity_delete('ooa_gallery', entity_id('ooa_gallery', $gallery));
+}
+
+/**
+ * Delete multiple galleries.
+ */
+function ooa_gallery_delete_multiple($gallery_ids) {
+  entity_delete_multiple('ooa_gallery', $gallery_ids);
+}
+
+
+/*******************************************************************************
+ ****************************** Task Type API's ********************************
+ ******************************************************************************/
+
+/**
+ * Access callback for task Type.
+ */
+function ooa_gallery_type_access($op, $entity = NULL) {
+  return user_access('administer ooa_gallery types');
+}
+
+/**
+ * Load gallery Type.
+ */
+function ooa_gallery_type_load($task_type) {
+  return ooa_gallery_types($task_type);
+}
+
+/**
+ * List of gallery Types.
+ */
+function ooa_gallery_types($type_name = NULL) {
+  $types = entity_load_multiple_by_name('ooa_gallery_type', isset($type_name) ? array($type_name) : FALSE);
+  return isset($type_name) ? reset($types) : $types;
+}
+
+/**
+ * Save gallery type entity.
+ */
+function ooa_gallery_type_save($gallery_type) {
+  entity_save('ooa_gallery_type', $gallery_type);
+}
+
+/**
+ * Delete single case type.
+ */
+function ooa_gallery_type_delete($gallery_type) {
+  entity_delete('ooa_gallery_type', entity_id('ooa_gallery_type', $gallery_type));
+}
+
+/**
+ * Delete multiple case types.
+ */
+function ooa_gallery_type_delete_multiple($gallery_type_ids) {
+  entity_delete_multiple('ooa_gallery_type', $gallery_type_ids);
+}
+
+/**
+  * Implements hook_views_api().
+  */
+function ooa_gallery_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'ooa_gallery'),
+  );
+}
+

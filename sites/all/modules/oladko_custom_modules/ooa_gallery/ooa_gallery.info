@@ -1,0 +1,10 @@
+name = OOA Gallery
+descriotion = My own gallary
+package = Oladko
+version = VERSION
+core = 7.x
+
+dependencies[] = entity
+dependencies[] = views
+
+files[] = ooa_gallery.controller.inc
